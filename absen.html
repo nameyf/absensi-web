@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Absensi Lokasi\n定位打卡</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 10px; }
+    button { margin: 8px; padding: 10px 20px; font-size: 16px; white-space: pre-line; }
+    video, canvas { display: none; width: 300px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Absensi Lokasi\n定位打卡</h2>
+
+  <input type="text" id="nama" placeholder="Nama\n姓名"><br><br>
+  <select id="kategori">
+    <option value="Kantor">Kantor\n办公室</option>
+    <option value="Produksi">Produksi\n产线</option>
+  </select><br><br>
+
+  <div id="buttons">
+    <button onclick="submitAbsen('in')">Masuk\n上班打卡</button>
+    <button onclick="submitAbsen('out')">Pulang\n下班打卡</button>
+    <button onclick="submitAbsen('overtime-start')">Lembur Mulai\n加班开始</button>
+    <button onclick="submitAbsen('overtime-end')">Lembur Selesai\n加班结束</button>
+    <button onclick="submitAbsen('night-start')">Shift Malam Mulai\n夜班开始</button>
+    <button onclick="submitAbsen('night-end')">Shift Malam Selesai\n夜班结束</button>
+  </div>
+
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <p id="status">Menunggu Lokasi...\n正在获取定位...</p>
+
+  <script>
+    const sheetURL = "https://script.google.com/macros/s/AKfycbzaPC3cfSZPAgNqlA1Mc4setNVNhrojyYOyeSKO8mBtjqw2be302uhfNTl-sEIOiWeU/exec"; // 替换为你自己的 API 链接
+    const factoryA = { lat: -6.2235593345336255, lon: 106.5287026243646 };
+    const factoryB = { lat: -6.270868871665209, lon: 106.3541132801832 };
+
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const { latitude, longitude } = pos.coords;
+      const jarakA = getDistance(latitude, longitude, factoryA.lat, factoryA.lon);
+      const jarakB = getDistance(latitude, longitude, factoryB.lat, factoryB.lon);
+      if (jarakA > 300 && jarakB > 300) {
+        document.getElementById("status").innerText = "Di luar area pabrik!\n不在工厂打卡范围！";
+        document.getElementById("buttons").style.display = "none";
+        return;
+      }
+      document.getElementById("status").innerText = "Lokasi OK\n定位成功，可打卡";
+    }, () => {
+      document.getElementById("status").innerText = "Gagal deteksi lokasi\n定位失败";
+    });
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // 打卡提交主函数
+    async function submitAbsen(jenis) {
+      const nama = document.getElementById("nama").value.trim();
+      const kategori = document.getElementById("kategori").value;
+      if (!nama) return alert("Masukkan Nama!\n请输入姓名");
+
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      video.srcObject = stream;
+      video.style.display = "block";
+      await new Promise(r => setTimeout(r, 1200)); // 等待摄像头准备
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+      video.style.display = "none";
+      stream.getTracks().forEach(track => track.stop());
+      const base64Image = canvas.toDataURL("image/jpeg").split(',')[1];
+
+      navigator.geolocation.getCurrentPosition(pos => {
+        const payload = {
+          nama, kategori, jenis, timestamp: new Date().toISOString(),
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          foto: base64Image
+        };
+        fetch(sheetURL, {
+          method: "POST",
+          body: JSON.stringify(payload)
+        }).then(r => r.text())
+          .then(msg => alert("✅ " + msg))
+          .catch(e => alert("❌ Gagal kirim data\n提交失败"));
+      });
+    }
+  </script>
+</body>
+</html>
